@@ -503,12 +503,15 @@ function configuration_request(context) {
 	if (address.type === 'queue') {
 	    address.brokers = allocate_brokers(address.shards || 1);
 	    address.waypoints = allocate_waypoints(address.brokers);
-	    console.log('defining ' + JSON.stringify(address));
+	    console.log('defining queue ' + address.name + ' on broker(s):');
 	    for (var b in address.brokers) {
+		console.log('        ' + address.brokers[b].container_id);
 		address.brokers[b].add_queue(new Queue(address.name));
 	    }
+	    console.log('    and accompanying waypoints on routers:');
 	    for (var r in routers) {
-		var router = routers[r].define_address_sync(address);
+		routers[r].define_address_sync(address);
+		console.log('        ' + routers[r].container_id);
 	    }
 	} else {
 	    console.log('unhandled address type ' + JSON.stringify(address));
