@@ -48,7 +48,7 @@ Subscription.prototype.on_message = function (msg) {
 		var addresses = base.addresses;
 		var port = base.ports[0].port;
 		var processes = {};
-		addresses.forEach(function (e) { processes[e.targetRef.name] = {'ip':e.ip,'port':port}; });
+		addresses.forEach(function (e) { processes[e.targetRef.name] = {'host':e.ip,'port':port}; });
 		console.log('process list [' + o.type + ']: ' + JSON.stringify(processes));
 		var added = difference(processes, this.current);
 		var removed = difference(this.current, processes);

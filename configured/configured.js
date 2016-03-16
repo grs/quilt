@@ -500,16 +500,18 @@ function configuration_request(context) {
     console.log('Received configuration request: ' + JSON.stringify(context.message));
     if (context.message.properties.subject === 'define') {
 	var address = context.message.body;
-	console.log('defining ' + JSON.stringify(address));
 	if (address.type === 'queue') {
 	    address.brokers = allocate_brokers(address.shards || 1);
 	    address.waypoints = allocate_waypoints(address.brokers);
+	    console.log('defining ' + JSON.stringify(address));
 	    for (var b in address.brokers) {
 		address.brokers[b].add_queue(new Queue(address.name));
 	    }
 	    for (var r in routers) {
 		var router = routers[r].define_address_sync(address);
 	    }
+	} else {
+	    console.log('unhandled address type ' + JSON.stringify(address));
 	}
     } else if (context.message.properties.subject === 'connect') {
 	amqp.connect(context.message.body);
@@ -542,8 +544,10 @@ amqp.on('connection_open', function(context) {
 	var id = context.connection.remote.open.container_id;
 	if (brokers[id] === undefined) {
 	    brokers[id] = new Qpidd(context.connection);
+	    console.log('Connection established from qpidd: ' + id + ' [' + context.connection.id + ']');
 	} else {
 	    brokers[id].connected(context.connection);
+	    console.log('Connection re-established from qpidd: ' + id + ' [' + context.connection.id + ']');
 	}
     } else {
 	context.connection.on('message', configuration_request);
@@ -557,6 +561,7 @@ var watcher = kube.watch_service('brokers');
 watcher.on('added', function (procs) {
     for (var name in procs) {
 	var proc = procs[name];
+	proc.id = name;
 	amqp.connect(proc);
 	console.log('connecting to new broker on ' + JSON.stringify(proc));
     }
