@@ -16,7 +16,11 @@
 'use strict';
 
 var amqp = require('rhea');
+var http = require('http');
+var url = require('url');
 var kube = require('./kube_utils.js');
+var qpidd = require('./qpidd_utils.js');
+var artemis = require('./artemis_utils.js');
 
 var routers = {};
 var brokers = {};
@@ -190,8 +194,8 @@ Router.prototype.incoming = function (context) {
     }
 };
 
-Router.prototype._define_fixed_address = function (address, phase, callback) {
-    this.create_entity('fixedAddress', address.name+'_'+phase, {'prefix':address.name, 'phase':phase, 'fanout':'single'}, callback);
+Router.prototype._define_fixed_address = function (address, phase, fanout, callback) {
+    this.create_entity('fixedAddress', address.name+'_'+phase, {'prefix':address.name, 'phase':phase, 'fanout':fanout}, callback);
 };
 
 Router.prototype._define_ondemand_connector = function (name, broker, callback) {
@@ -203,12 +207,12 @@ Router.prototype._define_waypoint = function (address, connector, callback) {
 };
 
 Router.prototype.define_address_sync = function (address) {
-    if (address.type === 'queue') {
+    if (address.spec.store_and_forward) {
 	var router = this;
 	var waypoint = address.waypoints[this.listener];
-	router._define_fixed_address(address, 0, function() {
+	router._define_fixed_address(address, 0, 'single', function() {
 	    console.log('phase 0 address for ' + address.name + ' created on ' + router.container_id);
-	    router._define_fixed_address(address, 1, function() {		    
+	    router._define_fixed_address(address, 1, address.spec.multicast ? 'multiple' : 'single', function() {		    
 		console.log('phase 1 address for ' + address.name + ' created on ' + router.container_id);
 		if (waypoint) {
 		    console.log('defining waypoint for ' + address.name + ' on ' + router.container_id);
@@ -223,14 +227,17 @@ Router.prototype.define_address_sync = function (address) {
 		}
 	    }); 
 	});
+    } else {
+	router.create_entity('fixedAddress', address.name, {'prefix':address.name, 'fanout':address.spec.multicast ? 'multiple' : 'single'}, function() {		    
+	    console.log('direct address for ' + address.name + ' created on ' + router.container_id);
+	});
     }
-    //TODO other address types
 };
 
 Router.prototype.define_address_async = function (address) {
-    if (address.type === 'queue') {
+    if (address.spec.store_and_forward) {
 	this.create_entity('fixedAddress', address.name+'_0', {prefix:address.name, phase:0, fanout:'single'});
-	this.create_entity('fixedAddress', address.name+'_1', {prefix:address.name, phase:1, fanout:'single'});
+	this.create_entity('fixedAddress', address.name+'_1', {prefix:address.name, phase:1, fanout: address.spec.multicast ? 'multiple' : 'single'});
 	if (address.waypoints[this.listener]) {		    
 	    //define waypoint on one router for each broker shard:
 	    var broker = address.waypoints[this.listener].brokers[0];//can only handle one broker per waypoint at present
@@ -258,192 +265,6 @@ Queue.prototype.remove = function () {
     this.state = 'DELETING';
 };
 
-var Qpidd = function (connection) {
-    this.container_id = connection.remote.open.container_id;
-    this.type = 'qpidd';
-    this.queues = {};
-    this.connected(connection);
-    this.requests = {};
-    this.counter = 0;
-};
-
-Qpidd.prototype.get_load = function () {
-    return Object.keys(this.queues).length;
-};
-
-Qpidd.prototype.connected = function (connection) {
-    this.connection = connection;
-    this.host = connection.options.host || 'localhost';
-    this.port = connection.options.port || 5672;
-    this.sender = connection.open_sender('qmf.default.direct');
-    connection.open_receiver({source:{dynamic:true}});
-    connection.on('receiver_open', this.init.bind(this));
-    connection.on('message', this.incoming.bind(this));
-};
-
-Qpidd.prototype._request = function (callback, opcode) {
-    this.counter++;
-    var id = this.counter.toString(); 
-    this.requests[id] = callback;
-    var request = {properties:{correlation_id:id,subject:'broker',reply_to:this.address}};
-    request.application_properties = {'x-amqp-0-10.app-id':'qmf2', 'qmf.opcode':opcode};
-    return request;
-}
-
-Qpidd.prototype._query_request = function (type, callback) {
-    var request = this._request(callback, '_query_request');
-    request.body = {'_what':'OBJECT','_schema_id':{'_class_name':type}};
-    return request;
-};
-
-Qpidd.prototype._method_request = function (callback, method) {
-    var request = this._request(callback, '_method_request');
-    request.body = {'_object_id':{'_object_name':'org.apache.qpid.broker:broker:amqp-broker'},'_method_name':method};
-    return request;
-};
-
-Qpidd.prototype._create_request = function (type, name, attributes, callback) {
-    var request = this._method_request(callback, 'create');
-    request.body._arguments = {'type':type, 'name':name, properties: attributes};
-    return request;
-};
-
-Qpidd.prototype._delete_request = function (type, name, callback) {
-    var request = _method_request(callback, 'delete');
-    request.body._arguments = {'type':type, name:'name'};
-    return request;
-};
-
-Qpidd.prototype.init = function (context) {
-    this.address = context.receiver.remote.attach.source.address;
-    //create domain for router service
-    var request = this._create_request('domain', 'qdrouterd', {url:router_service_url(), sasl_mechanisms:'ANONYMOUS'}, this.on_domain_create_response.bind(this, 'qdrouterd'));
-    console.log('Sending ' + JSON.stringify(request));
-    this.sender.send(request);
-    //this.sender.send(this._create_request('domain', 'qdrouterd', {url:router_service_url(), sasl_mechanisms:'ANONYMOUS'}), this.on_domain_create_response.bind(this, 'qdrouterd'));
-    //query queues
-    request = this._query_request('queue', this.on_queue_query_response.bind(this))
-    console.log('Sending ' + JSON.stringify(request));
-    this.sender.send(request);
-    //this.sender.send(this._query_request('queue', this.on_queue_query_response.bind(this)));
-};
-
-function inphase(name) {
-    return 'M0' + name;
-}
-
-function outphase(name) {
-    return 'M1' + name;
-}
-
-Qpidd.prototype.incoming = function (context) {
-    var message = context.message;
-    var handler = this.requests[message.properties.correlation_id];
-    if (handler) {
-	delete this.requests[message.properties.correlation_id];
-	handler(message);
-    } else {
-	console.log('WARNING: unexpected response: ' + message.properties.correlation_id + ' [' + JSON.stringify(message) + ']');
-    }
-};
-
-Qpidd.prototype.on_domain_create_response = function (name, message) {
-    if (message.application_properties['qmf_opcode'] === '_exception') {
-	console.log('ERROR: failed to create domain: ' + message.body);
-    } else {
-	console.log('Created domain \'' + name + '\' on ' + this.container_id);
-    }
-}
-
-Qpidd.prototype.on_incoming_create_response = function (q, message) {
-    if (message.application_properties['qmf_opcode'] === '_exception') {
-	console.log('ERROR: failed to create incoming link: ' + message.body);
-    } else {
-	console.log('Created incoming link for \'' + q.name + '\' on ' + this.container_id);
-    }
-}
-
-Qpidd.prototype.on_outgoing_create_response = function (q, message) {
-    if (message.application_properties['qmf_opcode'] === '_exception') {
-	console.log('ERROR: failed to create outgoing link: ' + message.body);
-    } else {
-	console.log('Created outgoing link for \'' + q.name + '\' on ' + this.container_id);
-    }
-}
-
-Qpidd.prototype.on_queue_create_response = function (q, message) {
-    if (message.application_properties['qmf_opcode'] === '_exception') {
-	console.log('ERROR: failed to create queue: ' + message.body);
-    } else {
-	console.log('Created queue \'' + q.name + '\' on ' + this.container_id);
-	q.created();
-	//this.link_queue(q);
-    }
-};
-
-Qpidd.prototype.on_queue_delete_response = function (q, message) {
-    if (message.application_properties['qmf_opcode'] === '_exception') {
-	console.log('ERROR: failed to delete queue: ' + message.body);
-    } else {
-	delete this.queues[q.name];
-    }
-}
-
-Qpidd.prototype.add_queue = function (q) {
-    this.queues[q.name] = q;
-    this.sender.send(this._create_request('queue', q.name, q.attributes, this.on_queue_create_response.bind(this, q)));
-};
-
-Qpidd.prototype.link_queue = function (q) {
-    //create incoming link, i.e. for messages travelling from router to broker:
-    this.sender.send(this._create_request('incoming', q.name + '_in', {domain:'qdrouterd', source:inphase(q.name), target:q.name}, this.on_incoming_create_response.bind(this, q)));
-    //create outgoing link, i.e. for messages travelling from broker to router:
-    this.sender.send(this._create_request('outgoing', q.name + '_out', {domain:'qdrouterd', source:q.name, target:outphase(q.name)}, this.on_outgoing_create_response.bind(this, q)));
-}
-
-Qpidd.prototype.on_queue_query_response = function (message) {
-    var exists = {};
-    for (var i = 0; i < message.body.length; i++) {
-	var q = message.body[i]['_values'];
-	exists[q.name] = q;
-    }
-    var pending = [];
-    for (var name in this.queues) {
-	var q = this.queues[name];
-	if (exists[name]) {
-	    switch (q.state) {
-	    case 'CREATED':
-		//nothing to do
-		break;
-	    case 'CREATING':
-		q.created();
-		break;
-	    case 'DELETING':
-		pending.push(this._delete_request('queue', q.name, this.on_queue_delete_response.bind(this, q)));
-		break;
-	    }
-	} else {
-	    switch (q.state) {
-	    case 'CREATED':
-		console.log('WARNING: queue ' + q.name + ' not found on ' + this.container_id + '; recreating');
-		//drop through...
-	    case 'CREATING':
-		pending.push(this._create_request('queue', q.name, q.attributes, this.on_queue_create_response.bind(this, q)));
-		break;
-	    case 'DELETING':
-		delete this.queues[name];
-		break;
-	    }
-	}
-    }
-    for (var i = 0; i < pending.length; i++) {
-	this.sender.send(pending[i]);
-    }
-};
-
-Qpidd.prototype.disconnected = function (context) {
-    console.log(this.container_id + ' disconnected');
-};
 
 /**
  * Returns an array of 'n' of the least 'loaded' brokers.
@@ -496,23 +317,47 @@ function allocate_waypoints(shards) {
     return results;
 }
 
+function define_queue(name, details) {
+    var address = {};
+    address.name = name;
+    address.spec = details;
+    address.brokers = allocate_brokers(details.shards || 1);
+    address.waypoints = allocate_waypoints(address.brokers);
+    console.log('defining queue ' + address.name + ' on broker(s):');
+    for (var b in address.brokers) {
+	console.log('        ' + address.brokers[b].container_id);
+	address.brokers[b].add_queue(new Queue(address.name));
+    }
+    console.log('    and accompanying waypoints on routers:');
+    for (var r in routers) {
+	routers[r].define_address_sync(address);
+	console.log('        ' + routers[r].container_id);
+    }
+}
+
+function define_address(name, details) {
+    if (details.store_and_forward) {
+	if (details.multicast) {
+	    console.log('brokered topic not yet supported');
+	} else {
+	    define_queue(name, details);
+	}
+    } else {
+	//direct routed address
+    }
+}
+
+function delete_address(name, details) {
+    //TODO
+    console.log('FIXME: deletion not yet implemented');
+}
+
 function configuration_request(context) {
     console.log('Received configuration request: ' + JSON.stringify(context.message));
     if (context.message.properties.subject === 'define') {
 	var address = context.message.body;
 	if (address.type === 'queue') {
-	    address.brokers = allocate_brokers(address.shards || 1);
-	    address.waypoints = allocate_waypoints(address.brokers);
-	    console.log('defining queue ' + address.name + ' on broker(s):');
-	    for (var b in address.brokers) {
-		console.log('        ' + address.brokers[b].container_id);
-		address.brokers[b].add_queue(new Queue(address.name));
-	    }
-	    console.log('    and accompanying waypoints on routers:');
-	    for (var r in routers) {
-		routers[r].define_address_sync(address);
-		console.log('        ' + routers[r].container_id);
-	    }
+	    define_queue(address.name, address);
 	} else {
 	    console.log('unhandled address type ' + JSON.stringify(address));
 	}
@@ -546,12 +391,19 @@ amqp.on('connection_open', function(context) {
     } else if (product === 'qpid-cpp') {
 	var id = context.connection.remote.open.container_id;
 	if (brokers[id] === undefined) {
-	    brokers[id] = new Qpidd(context.connection);
-	    console.log('Connection established from qpidd: ' + id + ' [' + context.connection.id + ']');
+	    brokers[id] = new qpidd.Qpidd(context.connection);
+	    console.log('Connection established from qpidd: ' + id + ' [' + context.connection.options.id + ']');
 	} else {
 	    brokers[id].connected(context.connection);
-	    console.log('Connection re-established from qpidd: ' + id + ' [' + context.connection.id + ']');
+	    console.log('Connection re-established from qpidd: ' + id + ' [' + context.connection.options.id + ']');
 	}
+    } else if (product === undefined && context.connection.remote.open.container_id === '') {
+	//temporary hack: identify artemis by lack of container id and
+	//product information and use the connection identifier as the
+	//broker id for now
+	var id = context.connection.options.id;
+	brokers[id] = new artemis.Artemis(context.connection);
+	console.log('Connection established from artemis: ' + id + ' [' + context.connection.options.id + ']');
     } else {
 	context.connection.on('message', configuration_request);
     }
@@ -560,16 +412,154 @@ amqp.on('connection_open', function(context) {
 
 amqp.sasl_server_mechanisms.enable_anonymous();
 amqp.listen({port:55672});
-var watcher = kube.watch_service('brokers');
-watcher.on('added', function (procs) {
-    for (var name in procs) {
-	var proc = procs[name];
-	proc.id = name;
-	amqp.connect(proc);
-	console.log('connecting to new broker on ' + JSON.stringify(proc));
-    }
 
+if (process.env.KUBERNETES_SERVICE_HOST) {
+    var watcher = kube.watch_service('brokers');
+    watcher.on('added', function (procs) {
+	for (var name in procs) {
+	    var proc = procs[name];
+	    proc.id = name;
+	    amqp.connect(proc);
+	    console.log('connecting to new broker on ' + JSON.stringify(proc));
+	}
+	
+    });
+    watcher.on('removed', function (procs) {
+	console.log('brokers removed from service: ' + JSON.stringify(procs));
+    });
+} else {
+    console.log('Kubernetes service watcher was not activated.');
+}
+
+var addresses = {};
+
+function address_updated(name, original, modified) {
+    if (original === undefined) {
+	console.log('address ' + name + ' set to ' + JSON.stringify(modified));
+	define_address(name, modified);
+    } else if (modified === undefined) {
+	console.log('address ' + name + ' deleted (was ' + JSON.stringify(original) + ')');
+	delete_address(name, original);
+    } else {
+	console.log('address ' + name + ' changed from ' + JSON.stringify(original) + ' to ' + JSON.stringify(modified));
+	delete_address(name, original);
+	define_address(name, modified);
+    }
+}
+
+function write_response(response, content, code, content_type) {
+    response.writeHead(code || 200, {'Content-Type': content_type || 'text/plain'});
+    response.write(content);
+    response.end();
+}
+
+function write_json_response(response, object, code, content_type) {
+    write_response(response, JSON.stringify(object), code, 'application/json')
+}
+
+function http_error(code, text) {
+    return { 'code': code, 'text': text };
+}
+function not_found(request) {
+    return http_error(404, 'No such resource: ' + url.parse(request.url).pathname);
+}
+function bad_method(request) {
+    return http_error(405, 'Resource ' + url.parse(request.url).pathname + ' does not support ' + request.method);
+}
+
+var handlers = {
+    'address' : {
+	do_get : function (request, response, resource) {
+	    var a = addresses[resource.name];
+	    if (a) {
+		write_json_response(response, a);
+	    } else {
+		throw not_found(request);
+	    }
+	},
+	do_put : function (request, response, resource) {
+	    var buffer = '';
+	    request.on('data', function (chunk) {
+		buffer += chunk;
+	    });
+	    request.on('end', function () {
+		try {
+		    var a = JSON.parse(buffer);
+		    var old = addresses[resource.name];
+		    addresses[resource.name] = a;
+		    process.nextTick(function () { address_updated(resource.name, old, a) });
+		    write_json_response(response, a);
+		} catch (error) {
+		    write_response(response, error, 400);
+		}
+	    });
+	},
+	do_delete : function (request, response, resource) {
+	    var old = addresses[resource.name];
+	    delete addresses[resource.name];
+	    process.nextTick(function () { address_updated(resource.name, old, undefined) });
+	    response.writeHead(204);
+	    response.end();
+	}
+    },
+    'address_list' : {
+	do_get : function (request, response) {
+	    write_json_response(response, addresses);  
+	},
+    },
+    'connection_list' : {
+	do_post : function (request, response) {
+	    var buffer = '';
+	    request.on('data', function (chunk) {
+		buffer += chunk;
+	    });
+	    request.on('end', function () {
+		try {
+		    var details = JSON.parse(buffer);
+		    amqp.connect(details);
+		    console.log('connecting... ' + JSON.stringify(details));
+		    write_response(response, 'OK');
+		} catch (error) {
+		    write_response(response, ''+error, 400);
+		}
+	    });
+
+	},
+    }
+};
+
+function resolve(resource) {
+    if (resource.category === undefined) {
+	return handlers[''];
+    } if (resource.name === undefined) {
+	return handlers[resource.category + '_list'] || handlers[resource.category];
+    } else {
+	return handlers[resource.category];
+    }
+}
+
+function parse(request_url) {
+    var parts = url.parse(request_url).pathname.match(/\/([^\/]+)(?:\/(.+))*/) || [];
+    return { category: parts[1], name: parts[2] };
+}
+
+var server = http.createServer();
+server.on('request', function (request, response) {
+    try {
+	var resource = parse(request.url);
+	var handler = resolve(resource);
+	if (handler) {
+	    var method = handler['do_' + request.method.toLowerCase()];
+	    if (method) {
+		method.call(handler, request, response, resource);
+	    } else {
+		throw bad_method(request);
+	    }
+	} else {
+	    throw not_found(request);
+	}
+    } catch (error) {
+	write_response(response, error.text || ''+error, error.code || 500);
+    }
 });
-watcher.on('removed', function (procs) {
-    console.log('brokers removed from service: ' + JSON.stringify(procs));
-});
+server.listen(8080);
