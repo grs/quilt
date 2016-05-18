@@ -17,6 +17,10 @@
 
 var amqp = require('rhea');
 
+function router_service_url() {
+    return process.env.ROUTER_SERVICE_HOST + ':' + process.env.ROUTER_SERVICE_PORT;
+}
+
 var Qpidd = function (connection) {
     this.container_id = connection.remote.open.container_id;
     this.type = 'qpidd';
@@ -79,12 +83,10 @@ Qpidd.prototype.init = function (context) {
     var request = this._create_request('domain', 'qdrouterd', {url:router_service_url(), sasl_mechanisms:'ANONYMOUS'}, this.on_domain_create_response.bind(this, 'qdrouterd'));
     console.log('Sending ' + JSON.stringify(request));
     this.sender.send(request);
-    //this.sender.send(this._create_request('domain', 'qdrouterd', {url:router_service_url(), sasl_mechanisms:'ANONYMOUS'}), this.on_domain_create_response.bind(this, 'qdrouterd'));
     //query queues
     request = this._query_request('queue', this.on_queue_query_response.bind(this))
     console.log('Sending ' + JSON.stringify(request));
     this.sender.send(request);
-    //this.sender.send(this._query_request('queue', this.on_queue_query_response.bind(this)));
 };
 
 function inphase(name) {

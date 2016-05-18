@@ -17,8 +17,12 @@
 
 var amqp = require('rhea');
 
+var counter = 1;
+
 var Artemis = function (connection) {
-    this.container_id = connection.remote.open.container_id;
+    // artemis doesn't yet pass a container id, so fake one for now
+    //this.container_id = connection.remote.open.container_id;
+    this.container_id = 'artemis' + counter++;
     this.type = 'artemis';
     this.queues = {};
     this.connected(connection);

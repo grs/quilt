@@ -25,10 +25,6 @@ var artemis = require('./artemis_utils.js');
 var routers = {};
 var brokers = {};
 
-function router_service_url() {
-    return process.env.ROUTER_SERVICE_HOST + ':' + process.env.ROUTER_SERVICE_PORT;
-}
-
 function check_full_mesh() {
     //ensure that each router in the list is connected to all the others
     //if not, add connectors as needed
@@ -49,6 +45,7 @@ var Router = function (container_id, connection) {
     this.sender = connection.open_sender('$management');
     this.counter = 0;
     this.requests = {};
+    this.brokers = {};
     connection.open_receiver({source:{dynamic:true}});
     connection.on('receiver_open', this.init.bind(this));
     connection.on('message', this.incoming.bind(this));
@@ -101,6 +98,10 @@ Router.prototype.request = function (operation, properties, body, callback) {
         this.sender.send(req);
     }
 };
+
+function fully_qualified_type(type) {
+    return "org.apache.qpid.dispatch.router.config." + type;
+}
 
 Router.prototype._get_callback = function (operation, type) {
     var method = this['on_' + operation + '_' + type + '_response'];
@@ -194,60 +195,25 @@ Router.prototype.incoming = function (context) {
     }
 };
 
-Router.prototype._define_fixed_address = function (address, phase, fanout, callback) {
-    this.create_entity('fixedAddress', address.name+'_'+phase, {'prefix':address.name, 'phase':phase, 'fanout':fanout}, callback);
-};
 
-Router.prototype._define_ondemand_connector = function (name, broker, callback) {
-    this.create_entity('connector', name, {'role':'on-demand', 'addr':broker.host, 'port':broker.port}, callback);
-};
-
-Router.prototype._define_waypoint = function (address, connector, callback) {
-    this.create_entity('waypoint', address.name, {'address':address.name, 'inPhase':0, 'outPhase':1, 'connector':connector}, callback);
-};
-
-Router.prototype.define_address_sync = function (address) {
+Router.prototype.define_address = function (address) {
+    var dist = address.spec.multicast ? "multicast" : "balanced";
+    console.log('requesting address: ' + address.name);
+    this.create_entity('router.config.address', address.name, {prefix:address.name, distribution:dist, waypoint:address.spec.store_and_forward});
     if (address.spec.store_and_forward) {
-	var router = this;
-	var waypoint = address.waypoints[this.listener];
-	router._define_fixed_address(address, 0, 'single', function() {
-	    console.log('phase 0 address for ' + address.name + ' created on ' + router.container_id);
-	    router._define_fixed_address(address, 1, address.spec.multicast ? 'multiple' : 'single', function() {		    
-		console.log('phase 1 address for ' + address.name + ' created on ' + router.container_id);
-		if (waypoint) {
-		    console.log('defining waypoint for ' + address.name + ' on ' + router.container_id);
-		    var broker = waypoint.brokers[0];//can only handle one broker per waypoint at present
-		    var connector_id = address.name + '_' + broker.container_id;
-		    router._define_ondemand_connector(connector_id, broker, function() {
-			console.log('created connector ' + connector_id + ' on ' + router.container_id);
-			router._define_waypoint(address, connector_id, function() {
-			    console.log('created waypoint for ' + address.name + ' on ' + router.container_id);
-			});
-		    });
-		}
-	    }); 
-	});
-    } else {
-	router.create_entity('fixedAddress', address.name, {'prefix':address.name, 'fanout':address.spec.multicast ? 'multiple' : 'single'}, function() {		    
-	    console.log('direct address for ' + address.name + ' created on ' + router.container_id);
-	});
-    }
-};
-
-Router.prototype.define_address_async = function (address) {
-    if (address.spec.store_and_forward) {
-	this.create_entity('fixedAddress', address.name+'_0', {prefix:address.name, phase:0, fanout:'single'});
-	this.create_entity('fixedAddress', address.name+'_1', {prefix:address.name, phase:1, fanout: address.spec.multicast ? 'multiple' : 'single'});
-	if (address.waypoints[this.listener]) {		    
-	    //define waypoint on one router for each broker shard:
-	    var broker = address.waypoints[this.listener].brokers[0];//can only handle one broker per waypoint at present
-	    var id = address.name + '_' + broker.container_id;
-	    this.create_entity('connector', id, {role:'on-demand', addr:broker.host, port:broker.port});
-	    this.create_entity('waypoint', address.name, {address:address.name, inPhase:0, outPhase:1, connector:id});		    
+	for (var b in address.brokers) {
+	    var broker = address.brokers[b].container_id;
+	    console.log('requesting auto links with ' + broker);
+	    this.create_entity('router.config.autoLink', address.name + '-to-' + broker, {addr:address.name, dir:"out", connection:broker});
+	    this.create_entity('router.config.autoLink', address.name + '-from-' + broker, {addr:address.name, dir:"in", connection:broker});
 	}
     }
-    //TODO other address types
 };
+
+Router.prototype.connect_to_broker = function (broker) {
+    this.brokers[broker.container_id] = broker;
+    this.create_entity('connector', broker.container_id, {addr:broker.host, port:broker.port, role:'route-container'});
+}
 
 var Queue = function (name, attributes) {
     this.name = name;
@@ -263,6 +229,17 @@ Queue.prototype.created = function () {
 
 Queue.prototype.remove = function () {
     this.state = 'DELETING';
+};
+
+function get_router_for_broker() {
+    var result = undefined;
+    for (var id in routers) {
+	var r = routers[id];
+	if (result === undefined || r.brokers.length < result.brokers.length) {
+	    result = r;
+	}
+    }
+    return result;
 };
 
 
@@ -302,7 +279,7 @@ function pick_random(map, n) {
     return result;
 }
 
-function allocate_waypoints(shards) {
+function allocate_router_for_shards(shards) {
     var chosen_routers = pick_random(routers, shards.length);
     var router_keys = Object.keys(chosen_routers);
     var results = {};
@@ -317,33 +294,27 @@ function allocate_waypoints(shards) {
     return results;
 }
 
-function define_queue(name, details) {
+function define_address(name, details) {
     var address = {};
     address.name = name;
-    address.spec = details;
-    address.brokers = allocate_brokers(details.shards || 1);
-    address.waypoints = allocate_waypoints(address.brokers);
-    console.log('defining queue ' + address.name + ' on broker(s):');
-    for (var b in address.brokers) {
-	console.log('        ' + address.brokers[b].container_id);
-	address.brokers[b].add_queue(new Queue(address.name));
-    }
-    console.log('    and accompanying waypoints on routers:');
-    for (var r in routers) {
-	routers[r].define_address_sync(address);
-	console.log('        ' + routers[r].container_id);
-    }
-}
-
-function define_address(name, details) {
+    address.spec = details;    
     if (details.store_and_forward) {
+	address.brokers = allocate_brokers(details.shards || 1);
 	if (details.multicast) {
 	    console.log('brokered topic not yet supported');
 	} else {
-	    define_queue(name, details);
+	    console.log('defining queue ' + address.name + ' on broker(s):');
+	    for (var b in address.brokers) {
+		console.log('        ' + address.brokers[b].container_id);
+		address.brokers[b].add_queue(new Queue(address.name));
+	    }
 	}
-    } else {
-	//direct routed address
+    }
+    console.log('defining address ' + address.name + ' on router(s):');
+    for (var r in routers) {
+	routers[r].define_address(address);
+	console.log('xxx');
+	console.log('        ' + routers[r].container_id + ' (' + r +')');
     }
 }
 
@@ -375,6 +346,29 @@ function get_product(connection) {
     }
 }
 
+function add_broker(broker) {
+    var id = broker.container_id;
+    brokers[id] = broker;
+    console.log('Connection established from ' + broker.type + ': ' + id + ' [' + broker.connection.options.id + ']');
+    var router = get_router_for_broker();
+    if (router) {
+	router.connect_to_broker(broker);
+    } else {
+	console.log('ERROR: no routers available to connect to broker');
+    }
+}
+
+function handle_broker_connection(connection, Broker) {
+    var id = context.connection.remote.open.container_id;
+    if (id === undefined || brokers[id] === undefined) {
+	add_broker(new Broker(context.connection));
+    } else {
+	brokers[id].connected(context.connection);
+	console.log('Connection re-established from ' + brokers[i].type + ': ' + id + ' [' + context.connection.options.id + ']');
+	//TODO: alter connector for new ip of broker
+    }
+}
+
 amqp.on('connection_open', function(context) {
     var product = get_product(context.connection);
     if (product === 'qpid-dispatch-router') {
@@ -391,8 +385,7 @@ amqp.on('connection_open', function(context) {
     } else if (product === 'qpid-cpp') {
 	var id = context.connection.remote.open.container_id;
 	if (brokers[id] === undefined) {
-	    brokers[id] = new qpidd.Qpidd(context.connection);
-	    console.log('Connection established from qpidd: ' + id + ' [' + context.connection.options.id + ']');
+	    add_broker(new qpidd.Qpidd(context.connection));
 	} else {
 	    brokers[id].connected(context.connection);
 	    console.log('Connection re-established from qpidd: ' + id + ' [' + context.connection.options.id + ']');
@@ -401,9 +394,7 @@ amqp.on('connection_open', function(context) {
 	//temporary hack: identify artemis by lack of container id and
 	//product information and use the connection identifier as the
 	//broker id for now
-	var id = context.connection.options.id;
-	brokers[id] = new artemis.Artemis(context.connection);
-	console.log('Connection established from artemis: ' + id + ' [' + context.connection.options.id + ']');
+	add_broker(new artemis.Artemis(context.connection));
     } else {
 	context.connection.on('message', configuration_request);
     }
