@@ -13,10 +13,10 @@ public class TestClient {
             if (connectResult.succeeded()) {
                 System.out.println("Connected'");
                 ProtonConnection connection = connectResult.result();
-                connection.setContainer("bazmap").open();
+                connection.open();
                 System.out.println("Creating receiver");
-                connection.createReceiver("bazmap").handler(((delivery, message) -> {
-                    System.out.println("Received " + message.toString());
+                connection.createReceiver("maas").handler(((delivery, message) -> {
+                    System.out.println("Received " + message.getBody().toString());
                 })).open();
             }
         });
