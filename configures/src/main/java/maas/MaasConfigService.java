@@ -21,8 +21,8 @@ import java.net.URI;
  *
  * @author lulf
  */
-@Command(name = "maas-config-service", description = "Run configuration service")
-public class MaasConfigService implements Runnable {
+@Command(name = "maas-config-service", description = "Message-as-a-Service configuration service")
+public class MaasConfigService {
 
     @Option(name = {"-s", "--openshiftUri"}, description = "Openshift URI", required = true)
     public URI openshiftUri;
@@ -43,22 +43,23 @@ public class MaasConfigService implements Runnable {
     public int listenPort = 5672;
 
     public static void main(String [] args) {
-        SingleCommand<MaasConfigService> command = SingleCommand.singleCommand(MaasConfigService.class)<Runnable> command = Cli.<Runnable>builder("maas-config-service")
-                .withDescription("Message-as-a-Service configuration service")
-                .withDefaultCommand(Help.class)
-                .withCommands(MaasConfigService.class);
-        MaasConfigService maas = command.parse(args);
-        if (maas.helpOption.showHelpIfRequested()) {
-            return;
+
+        // Workaround since -h and --help doesn't really work with airlift :(
+        if (args.length == 0 || "-h".equals(args[0]) || "--help".equals(args[0]))
+        {
+            System.out.println("Usage maas-config-service -s <openshift uri, e.g. https://localhost:8443> -n <namespace> -u <openshiftUser> -t <openshiftToken> -l <listenAddress> -p <listenPort>");
+            System.exit(1);
         }
 
-        IClient client = new ClientFactory().create(openshiftUri.toASCIIString(), new NoopSSLCertificateCallback());
-        client.setAuthorizationStrategy(new TokenAuthorizationStrategy(openshiftToken, openshiftUser));
+        MaasConfigService config = SingleCommand.singleCommand(MaasConfigService.class).parse(args);
 
-        OpenshiftConfigMapDatabase database = new OpenshiftConfigMapDatabase(client, openshiftNamespace);
+        IClient client = new ClientFactory().create(config.openshiftUri.toASCIIString(), new NoopSSLCertificateCallback());
+        client.setAuthorizationStrategy(new TokenAuthorizationStrategy(config.openshiftToken, config.openshiftUser));
+
+        OpenshiftConfigMapDatabase database = new OpenshiftConfigMapDatabase(client, config.openshiftNamespace);
         database.start();
 
-        AMQPServer server = new AMQPServer(listenAddress, listenPort, database);
+        AMQPServer server = new AMQPServer(config.listenAddress, config.listenPort, database);
 
         server.run();
 
