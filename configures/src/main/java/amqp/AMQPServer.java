@@ -12,20 +12,19 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * AMQP server endpoint that handles connections to the service and propagates config.
+ * AMQP server endpoint that handles connections to the service and propagates config for a single config map.
+ *
+ * TODO: Support multiple configmaps
  *
  * @author lulf
  */
 public class AMQPServer {
     private static final Logger log = Logger.getLogger(AMQPServer.class.getName());
 
-    // TODO: Should move somewhere to make it more generic
-    private static final String MAAS_CONFIG = "maas";
     private final ConfigMapDatabase database;
     private final ProtonServer server;
     private final String hostname;
     private final int port;
-
 
     public AMQPServer(String hostname, int port, ConfigMapDatabase database)
     {
@@ -57,7 +56,7 @@ public class AMQPServer {
     private void senderOpenHandler(ProtonSender sender) {
         sender.setSource(sender.getRemoteSource());
         sender.open();
-        database.subscribe(MAAS_CONFIG, new MaasConfigSubscriber(sender));
+        database.subscribe(sender.getRemoteSource().getAddress(), new MaasConfigSubscriber(sender));
     }
 
     public void run() {
