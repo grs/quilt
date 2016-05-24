@@ -1,5 +1,5 @@
-#!/bin/sh
-SERVICE_ARGS=
+#!/bin/bash
+SERVICE_ARGS="-Dvertx.cacheDirBase=/tmp/vertx"
 if [ "$OPENSHIFT_USER" != "" ]; then
     SERVICE_ARGS="$SERVICE_ARGS -u $OPENSHIFT_USER"
 fi
@@ -13,9 +13,13 @@ if [ "$OPENSHIFT_NAMESPACE" != "" ]; then
 fi
 
 if [ "$KUBERNETES_SERVICE_HOST" != "" ]; then
-    SERVICE_ARGS="$SERVICE_ARGS -s \"https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT\""
+    SERVICE_ARGS="$SERVICE_ARGS -s https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT"
 elif [ "$OPENSHIFT_URI" != "" ]; then
     SERVICE_ARGS="$SERVICE_ARGS -s $OPENSHIFT_URI"
+fi
+
+if [ "$AMQP_LISTEN_ADDRESS"=="" ]; then
+    AMQP_LISTEN_ADDRESS=$(hostname -I)
 fi
 
 if [ "$AMQP_LISTEN_ADDRESS" != "" ]; then
