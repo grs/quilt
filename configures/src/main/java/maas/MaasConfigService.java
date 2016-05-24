@@ -40,7 +40,7 @@ public class MaasConfigService {
             String openshiftToken = cmd.getOptionValue("t");
             String openshiftUser = cmd.getOptionValue("u");
             String openshiftNamespace = cmd.getOptionValue("n");
-            String listenAddress = cmd.getOptionValue("l", "localhost");
+            String listenAddress = cmd.getOptionValue("l", "0.0.0.0");
             int listenPort = Integer.parseInt(cmd.getOptionValue("p", "5672"));
 
             IClient client = new ClientFactory().create(openshiftUri, new NoopSSLCertificateCallback());
