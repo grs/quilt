@@ -5,16 +5,14 @@ import io.vertx.proton.ProtonConnection;
 import io.vertx.proton.ProtonSender;
 import io.vertx.proton.ProtonServer;
 import io.vertx.proton.ProtonSession;
-import maas.MaasConfigSubscriber;
 import model.ConfigMapDatabase;
 
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 /**
- * AMQP server endpoint that handles connections to the service and propagates config for a single config map.
- *
- * TODO: Support multiple configmaps
+ * AMQP server endpoint that handles connections to the service and propagates config for a config map specified
+ * as the address to which the client wants to receive.
  *
  * @author lulf
  */
@@ -56,7 +54,7 @@ public class AMQPServer {
     private void senderOpenHandler(ProtonSender sender) {
         sender.setSource(sender.getRemoteSource());
         sender.open();
-        database.subscribe(sender.getRemoteSource().getAddress(), new MaasConfigSubscriber(sender));
+        database.subscribe(sender.getRemoteSource().getAddress(), new AMQPConfigSubscriber(sender));
     }
 
     public void run() {
