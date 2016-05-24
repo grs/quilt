@@ -51,10 +51,10 @@ public class AMQPServer {
         }).open();
 
         connection.sessionOpenHandler(ProtonSession::open);
-        connection.senderOpenHandler(this::sessionOpenHandler);
+        connection.senderOpenHandler(this::senderOpenHandler);
     }
 
-    private void sessionOpenHandler(ProtonSender sender) {
+    private void senderOpenHandler(ProtonSender sender) {
         sender.setSource(sender.getRemoteSource());
         sender.open();
         database.subscribe(MAAS_CONFIG, new MaasConfigSubscriber(sender));
