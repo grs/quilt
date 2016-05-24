@@ -24,8 +24,8 @@ import java.net.URI;
 @Command(name = "maas-config-service", description = "Message-as-a-Service configuration service")
 public class MaasConfigService {
 
-    @Option(name = {"-s", "--openshiftUri"}, description = "Openshift URI", required = true)
-    public URI openshiftUri;
+    @Option(name = {"-s", "--openshiftUri"}, description = "Openshift URI")
+    public URI openshiftUri = URI.create("https://localhost:8443");
 
     @Option(name = {"-n", "--namespace"}, description = "Openshift namespace", required = true)
     public String openshiftNamespace;
@@ -36,8 +36,8 @@ public class MaasConfigService {
     @Option(name = {"-t", "--token"}, description = "Openshift auth token", required = true)
     public String openshiftToken;
 
-    @Option(name = {"-l", "--listenAddress"}, description = "AMQP listen address", required = true)
-    public String listenAddress;
+    @Option(name = {"-l", "--listenAddress"}, description = "AMQP listen address")
+    public String listenAddress = "localhost";
 
     @Option(name = {"-p", "--port"}, description = "AMQP listen port")
     public int listenPort = 5672;
