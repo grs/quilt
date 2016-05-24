@@ -10,7 +10,7 @@ public class TestClient {
 
     public static void main(String [] args) {
         ProtonClient client = ProtonClient.create(Vertx.vertx());
-        client.connect(new ProtonClientOptions().setConnectTimeout(10000), "localhost", 5672, connectResult -> {
+        client.connect(new ProtonClientOptions().setConnectTimeout(10000), "172.17.0.3", 5672, connectResult -> {
             //client.connect(new ProtonClientOptions().setConnectTimeout(10000), "172.30.87.111", 5672, connectResult -> {
             if (connectResult.succeeded()) {
                 System.out.println("Connected'");

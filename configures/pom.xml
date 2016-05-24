@@ -55,7 +55,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>maas.MaasConfigService</mainClass>
+                            <mainClass>ConfigService</mainClass>
                         </manifest>
                     </archive>
                     <descriptorRefs>

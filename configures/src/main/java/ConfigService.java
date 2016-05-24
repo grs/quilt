@@ -1,5 +1,3 @@
-package maas;
-
 import amqp.AMQPServer;
 import com.openshift.restclient.ClientFactory;
 import com.openshift.restclient.IClient;
@@ -19,7 +17,7 @@ import org.apache.commons.cli.ParseException;
  *
  * @author lulf
  */
-public class MaasConfigService {
+public class ConfigService {
 
     public static void main(String [] args) throws ParseException {
 
@@ -54,7 +52,7 @@ public class MaasConfigService {
             server.run();
         } catch (ParseException e) {
             HelpFormatter formatter = new HelpFormatter();
-            formatter.printHelp("maas-config-service", options);
+            formatter.printHelp("config-service", options);
         }
     }
 
