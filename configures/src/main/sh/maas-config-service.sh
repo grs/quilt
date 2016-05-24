@@ -1,5 +1,5 @@
 #!/bin/bash
-SERVICE_ARGS="-Dvertx.cacheDirBase=/tmp/vertx"
+SERVICE_ARGS=""
 if [ "$OPENSHIFT_USER" != "" ]; then
     SERVICE_ARGS="$SERVICE_ARGS -u $OPENSHIFT_USER"
 fi
