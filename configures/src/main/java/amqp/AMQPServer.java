@@ -61,6 +61,7 @@ public class AMQPServer {
     }
 
     public void run() {
+        log.log(Level.INFO, String.format("Starting server on %s:%d", hostname, port));
         server.listen(port, hostname);
     }
 }

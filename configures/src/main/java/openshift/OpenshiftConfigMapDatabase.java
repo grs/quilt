@@ -35,13 +35,13 @@ public class OpenshiftConfigMapDatabase implements IOpenShiftWatchListener, Auto
     }
 
     public void start() {
-        log.log(Level.FINE, "Starting to watch configs");
+        log.log(Level.INFO, "Starting to watch configs");
         this.watcher = restClient.watch(namespace, this, ResourceKind.CONFIG_MAP);
     }
 
     @Override
     public void connected(List<IResource> resources) {
-        log.log(Level.FINE, "Connected, got " + resources.size() + " resources");
+        log.log(Level.INFO, "Connected, got " + resources.size() + " resources");
         for (IResource resource : resources) {
             IConfigMap configMap = (IConfigMap) resource;
 
@@ -53,7 +53,7 @@ public class OpenshiftConfigMapDatabase implements IOpenShiftWatchListener, Auto
 
     @Override
     public void disconnected() {
-        log.log(Level.FINE, "Disconnected, clearing map");
+        log.log(Level.INFO, "Disconnected, clearing map and reconnecting");
         configMapMap.clear();
     }
 
