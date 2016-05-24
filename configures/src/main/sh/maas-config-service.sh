@@ -30,4 +30,4 @@ if [ "$AMQP_PORT" != "" ]; then
     SERVICE_ARGS="$SERVICE_ARGS -p $AMQP_PORT"
 fi
 
-exec /usr/bin/java -jar /configuration-service.jar $SERVICE_ARGS
+exec /usr/bin/java -Dvertx.cacheDirBase=/tmp/vert.x -jar /configuration-service.jar $SERVICE_ARGS
