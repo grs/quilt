@@ -28,7 +28,10 @@ public class ConfigMap {
      */
     public synchronized void subscribe(ConfigSubscriber subscriber) {
         subscriberList.add(subscriber);
-        subscriber.configUpdated(name, version, values);
+        // Notify only when we have values
+        if (version != null) {
+            subscriber.configUpdated(name, version, values);
+        }
     }
 
     /**

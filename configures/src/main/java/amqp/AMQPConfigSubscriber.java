@@ -73,7 +73,6 @@ public class AMQPConfigSubscriber implements ConfigSubscriber {
         } catch (IOException e) {
             log.log(Level.INFO, "Unable to decode, returning as string");
             node.put(key, value);
-            throw e;
         }
     }
 }
