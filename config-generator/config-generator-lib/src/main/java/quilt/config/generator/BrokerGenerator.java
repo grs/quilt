@@ -29,39 +29,29 @@ public class BrokerGenerator {
         controller.addTemplateLabel("role", "broker");
         controller.setReplicaSelector(Collections.singletonMap("role", "broker"));
 
-        generateBroker(controller);
-        generateConfigurationDaemon(controller, broker);
+        generateBroker(controller, broker);
         generateDispatchRouter(controller);
 
         return controller;
     }
 
-    private void generateBroker(ReplicationController controller) {
+    private void generateBroker(ReplicationController controller, Broker broker) {
         Port amqpPort = new Port(new ModelNode());
-        amqpPort.setContainerPort(5672);
+        amqpPort.setContainerPort(5673);
+        Map<String, String> env = new LinkedHashMap<>();
+        env.put("QUEUE_NAME", broker.getAddress());
 
         controller.addContainer(
                 "broker",
                 new DockerImageURI("gordons/qpidd:v4"),
                 Collections.singleton(amqpPort),
-                Collections.emptyMap(),
-                Collections.emptyList());
-    }
-
-    private void generateConfigurationDaemon(ReplicationController controller, Broker broker) {
-        Map<String, String> env = new LinkedHashMap<>();
-        env.put("QUEUE_NAME", broker.getAddress());
-        controller.addContainer(
-                "configured",
-                new DockerImageURI("gordons/configured:v9"),
-                Collections.emptySet(),
                 env,
                 Collections.emptyList());
     }
 
     private void generateDispatchRouter(ReplicationController controller) {
         Port interRouterPort = new Port(new ModelNode());
-        interRouterPort.setContainerPort(55672);
+        interRouterPort.setContainerPort(5672);
 
         controller.addContainer(
                 "router",
