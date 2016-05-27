@@ -495,7 +495,7 @@ var handlers = {
     },
     'address_list' : {
 	do_get : function (request, response) {
-	    write_json_response(response, addresses);  
+	    write_json_response(response, addresses);
 	},
     },
     'connection_list' : {
