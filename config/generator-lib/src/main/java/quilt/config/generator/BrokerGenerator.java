@@ -16,11 +16,14 @@ import quilt.config.model.Roles;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
  * @author lulf
  */
 public class BrokerGenerator {
+    private static final Logger log = Logger.getLogger(BrokerGenerator.class.getName());
     private final ResourceFactory factory;
 
     public BrokerGenerator(IClient osClient) {
@@ -31,7 +34,7 @@ public class BrokerGenerator {
         ReplicationController controller = factory.create("v1", ResourceKind.REPLICATION_CONTROLLER);
 
         // TODO: sanitize address
-        controller.setName("broker-controller-" + broker.address());
+        controller.setName("controller-" + broker.address());
         controller.setReplicas(1);
         controller.addLabel(LabelKeys.ROLE, Roles.BROKER);
         controller.addLabel(LabelKeys.ADDRESS, broker.address());
@@ -45,10 +48,15 @@ public class BrokerGenerator {
     }
 
     private void generateBroker(ReplicationController controller, Broker broker) {
+        if (!broker.storeAndForward()) {
+            log.log(Level.INFO, "Not generating broker %s as store_and_forward is not set", broker.address());
+            return;
+        }
+
         Port amqpPort = new Port(new ModelNode());
         amqpPort.setContainerPort(5673);
         Map<String, String> env = new LinkedHashMap<>();
-        env.put(EnvVars.QUEUE_NAME, broker.address());
+        env.put(broker.multicast() ? EnvVars.TOPIC_NAME : EnvVars.QUEUE_NAME, broker.address());
 
         controller.addContainer(
                 "broker",
