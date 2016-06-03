@@ -7,6 +7,7 @@ import com.openshift.restclient.IClient;
 import com.openshift.restclient.ResourceKind;
 import com.openshift.restclient.images.DockerImageURI;
 import com.openshift.restclient.model.IReplicationController;
+import quilt.config.model.BrokerProperties;
 import quilt.config.model.Destination;
 import org.jboss.dmr.ModelNode;
 import quilt.config.model.EnvVars;
@@ -30,7 +31,7 @@ public class BrokerGenerator {
         factory = new ResourceFactory(osClient);
     }
 
-    public IReplicationController generate(Destination destination) {
+    public IReplicationController generate(Destination destination, BrokerProperties properties) {
         if (!destination.storeAndForward()) {
             throw new IllegalArgumentException("Not generating broker for destination, storeAndForward = " + destination.storeAndForward());
         }
@@ -44,36 +45,36 @@ public class BrokerGenerator {
         controller.addTemplateLabel(LabelKeys.ROLE, Roles.BROKER);
         controller.setReplicaSelector(Collections.singletonMap(LabelKeys.ROLE, Roles.BROKER));
 
-        generateBroker(controller, destination);
-        generateDispatchRouter(controller, destination);
+        generateBroker(controller, destination, properties);
+        generateDispatchRouter(controller, destination, properties);
 
         return controller;
     }
 
-    private void generateBroker(ReplicationController controller, Destination destination) {
+    private void generateBroker(ReplicationController controller, Destination destination, BrokerProperties properties) {
 
         Port amqpPort = new Port(new ModelNode());
-        amqpPort.setContainerPort(5673);
+        amqpPort.setContainerPort(properties.brokerPort());
         Map<String, String> env = new LinkedHashMap<>();
         env.put(destination.multicast() ? EnvVars.TOPIC_NAME : EnvVars.QUEUE_NAME, destination.address());
 
         controller.addContainer(
                 "broker",
-                new DockerImageURI("gordons/artemis:latest"),
+                properties.brokerImage(),
                 Collections.singleton(amqpPort),
                 env,
-                Collections.singletonList("/var/run/artemis"));
+                properties.brokerMounts());
     }
 
-    private void generateDispatchRouter(ReplicationController controller, Destination destination) {
+    private void generateDispatchRouter(ReplicationController controller, Destination destination, BrokerProperties properties) {
         Port interRouterPort = new Port(new ModelNode());
-        interRouterPort.setContainerPort(5672);
+        interRouterPort.setContainerPort(properties.routerPort());
 
         Map<String, String> env = new LinkedHashMap<>();
         env.put(destination.multicast() ? EnvVars.TOPIC_NAME : EnvVars.QUEUE_NAME, destination.address());
         controller.addContainer(
                 "router",
-                new DockerImageURI("gordons/qdrouterd:v7"),
+                properties.routerImage(),
                 Collections.singleton(interRouterPort),
                 env,
                 Collections.emptyList());

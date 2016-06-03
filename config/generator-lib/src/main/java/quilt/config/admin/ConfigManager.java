@@ -16,6 +16,6 @@ public class ConfigManager {
         this.brokerManager = new BrokerManager(osClient, generator);
     }
     public void configUpdated(Config config) {
-        brokerManager.destinationsUpdated(config.destinations());
+        brokerManager.destinationsUpdated(config.destinations(), config.brokerProperties());
     }
 }

@@ -2,6 +2,7 @@ package quilt.config.admin;
 
 import com.openshift.restclient.model.IReplicationController;
 import quilt.config.generator.ConfigGenerator;
+import quilt.config.model.BrokerProperties;
 import quilt.config.model.Destination;
 import quilt.config.model.LabelKeys;
 import quilt.config.openshift.OpenshiftClient;
@@ -28,31 +29,31 @@ public class BrokerManager {
         this.generator = generator;
     }
 
-    public void destinationsUpdated(Collection<Destination> destinations) {
+    public void destinationsUpdated(Collection<Destination> destinations, BrokerProperties properties) {
         List<IReplicationController> currentBrokers = openshiftClient.listBrokers();
         log.log(Level.INFO, "Brokers got updated to " + destinations.size() + " destinations, we have " + currentBrokers.size() + " destinations: " + currentBrokers.stream().map(IReplicationController::getName).toString());
-        createBrokers(currentBrokers, destinations);
-        deleteBrokers(currentBrokers, destinations);
-        updateBrokers(currentBrokers, destinations);
+        createBrokers(currentBrokers, destinations, properties);
+        deleteBrokers(currentBrokers, destinations, properties);
+        updateBrokers(currentBrokers, destinations, properties);
     }
 
-    private void createBrokers(Collection<IReplicationController> currentBrokers, Collection<Destination> newDestinations) {
+    private void createBrokers(Collection<IReplicationController> currentBrokers, Collection<Destination> newDestinations, BrokerProperties properties) {
         newDestinations.stream()
                 .filter(broker -> !currentBrokers.stream().filter(controller -> broker.address().equals(controller.getLabels().get(LabelKeys.ADDRESS))).findAny().isPresent())
-                .map(generator::generateBroker)
+                .map(dest -> generator.generateBroker(dest, properties))
                 .forEach(openshiftClient::createBroker);
     }
 
-    private void deleteBrokers(Collection<IReplicationController> currentBrokers, Collection<Destination> newDestinations) {
+    private void deleteBrokers(Collection<IReplicationController> currentBrokers, Collection<Destination> newDestinations, BrokerProperties properties) {
         currentBrokers.stream()
                 .filter(controller -> !newDestinations.stream().filter(broker -> broker.address().equals(controller.getLabels().get(LabelKeys.ADDRESS))).findAny().isPresent())
                 .forEach(openshiftClient::deleteBroker);
     }
 
-    private void updateBrokers(Collection<IReplicationController> currentBrokers, Collection<Destination> newDestinations) {
+    private void updateBrokers(Collection<IReplicationController> currentBrokers, Collection<Destination> newDestinations, BrokerProperties properties) {
         newDestinations.stream()
                 .filter(broker -> currentBrokers.stream().filter(controller -> broker.address().equals(controller.getLabels().get(LabelKeys.ADDRESS))).findAny().isPresent())
-                .map(generator::generateBroker)
+                .map(dest -> generator.generateBroker(dest, properties))
                 .forEach(this::brokerModified);
     }
 
