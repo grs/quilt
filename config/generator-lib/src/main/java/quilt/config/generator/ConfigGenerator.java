@@ -3,6 +3,7 @@ package quilt.config.generator;
 import com.openshift.restclient.IClient;
 import com.openshift.restclient.model.IReplicationController;
 import com.openshift.restclient.model.IResource;
+import quilt.config.model.BrokerProperties;
 import quilt.config.model.Destination;
 import quilt.config.model.Config;
 
@@ -23,11 +24,11 @@ public class ConfigGenerator {
     public List<IResource> generate(Config config) {
         return config.destinations().stream()
                 .filter(Destination::storeAndForward)
-                .map(brokerGenerator::generate)
+                .map(dest -> brokerGenerator.generate(dest, config.brokerProperties()))
                 .collect(Collectors.toList());
     }
 
-    public IReplicationController generateBroker(Destination destination) {
-        return brokerGenerator.generate(destination);
+    public IReplicationController generateBroker(Destination destination, BrokerProperties properties) {
+        return brokerGenerator.generate(destination, properties);
     }
 }

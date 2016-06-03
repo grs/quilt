@@ -4,6 +4,7 @@ import com.openshift.restclient.model.IContainer;
 import com.openshift.restclient.model.IReplicationController;
 import org.junit.Before;
 import org.junit.Test;
+import quilt.config.model.BrokerProperties;
 import quilt.config.model.Destination;
 import quilt.config.model.EnvVars;
 import quilt.config.model.LabelKeys;
@@ -25,12 +26,12 @@ public class BrokerGeneratorTest {
 
     @Test(expected = IllegalArgumentException.class)
     public void testThrowOnNoStore() {
-        generator.generate(new Destination("testaddr", false, false));
+        generator.generate(new Destination("testaddr", false, false), new BrokerProperties.Builder().build());
     }
 
     @Test
     public void testGenerator() {
-        IReplicationController controller = generator.generate(new Destination("testaddr", true, false));
+        IReplicationController controller = generator.generate(new Destination("testaddr", true, false), new BrokerProperties.Builder().build());
 
         assertThat(controller.getName(), is("controller-testaddr"));
         assertThat(controller.getLabels().get(LabelKeys.ROLE), is(Roles.BROKER));
@@ -49,7 +50,7 @@ public class BrokerGeneratorTest {
 
     @Test
     public void testGenerateTopic() {
-        IReplicationController controller = generator.generate(new Destination("testaddr", true, true));
+        IReplicationController controller = generator.generate(new Destination("testaddr", true, true), new BrokerProperties.Builder().build());
         IContainer broker = controller.getContainer("broker");
         assertThat(broker.getEnvVars().get(EnvVars.TOPIC_NAME), is("testaddr"));
     }
