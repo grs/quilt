@@ -1,0 +1,8 @@
+#!/bin/sh
+
+if [ -z "KUBERNETES_SERVICE_HOST" ]; then
+    echo "ERROR: can't find kubernetes";
+else
+    envsubst < /etc/prometheus/prometheus.template >> /tmp/prometheus.yml
+fi
+exec /usr/local/prometheus-0.20.0.linux-amd64/prometheus --config.file=/tmp/prometheus.yml -storage.local.path=/prometheus -web.console.libraries=/etc/prometheus/console_libraries -web.console.templates=/etc/prometheus/consoles

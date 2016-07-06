@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: rhea-recv
+  labels:
+    name: rhea-recv
+  annotations:
+    prometheus.io/scrape: true
+    prometheus.io/port: 9090
+spec:
+  replicas: 1
+  selector:
+    name: rhea-recv
+  template:
+    metadata:
+      labels:
+        name: rhea-recv
+    spec:
+      containers:
+      - name: master
+        image: gordons/rhea-recv:stable
+        ports:
+        - containerPort: 9090

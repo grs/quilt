@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: prometheus
+  labels:
+    name: prometheus
+spec:
+  replicas: 1
+  selector:
+    name: prometheus
+  template:
+    metadata:
+      labels:
+        name: prometheus
+    spec:
+      containers:
+      - name: master
+        image: gordons/prometheus:stable
+        ports:
+        - containerPort: 3000
+        volumeMounts:
+        - mountPath: /prometheus
+          name: storage
+      volumes:
+      - name: storage
+        emptyDir: {}
